@@ -249,9 +249,10 @@ if __name__ == "__main__":
     target_domain = domain_names[:]
     del target_domain[args.s]
 
-    for i in range(len(target_domain)):
-        train_data, test_data = split_data(DATA_PATH[i], class_list)
-        train_datas.append(train_data)
-        test_datas.append(test_data)
+    for i in range(len(domain_names)):
+        if domain_names[i] in target_domain:
+            train_data, test_data = split_data(DATA_PATH[i], class_list)
+            train_datas.append(train_data)
+            test_datas.append(test_data)
 
     target_train(train_datas, test_datas, device, target_domain, args)
