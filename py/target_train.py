@@ -48,6 +48,14 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
 
     return optimizer
 
+def cos_distance(x,y, eps=1e-8):
+    x_n, y_n = x.norm(dim=1)[:, None], y.norm(dim=1)[:, None]
+    x_norm = x / torch.max(x_n, eps * torch.ones_like(x_n))
+    y_norm = y / torch.max(y_n, eps* torch.ones_like(y_n))
+    
+    dist = 1 - torch.mm(x_norm, y_norm.transpose(0,1))
+
+    return dist
 
 def self_labeling(model, datas, batch_size, i, device):
     start_chk = True
@@ -71,31 +79,32 @@ def self_labeling(model, datas, batch_size, i, device):
                 features = torch.cat((features, feature.float()), dim=0)
                 targets = torch.cat((targets, target.float()), dim=0)
 
+    #num_classes x out_features
     centroid = targets.transpose(0, 1).matmul(features) / (1e-8 + targets.sum(axis=0)[:, None])
-    similarity = torch.tensor([]).to(device)
+    dist = torch.tensor([]).to(device)
 
+    #bug! F.cosine_similarity
+    # https://stackoverflow.com/questions/50411191/how-to-compute-the-cosine-similarity-in-pytorch-for-all-rows-in-a-matrix-with-re 
     for i in range(features.size(0)):
-        similarity = torch.cat((similarity, F.cosine_similarity(features[i].unsqueeze(0), centroid).unsqueeze(0)),
-                               dim=0)
+        dist = torch.cat(dist, cos_distance(features, centroid))
 
     self_label = torch.zeros((features.size(0), targets.size(1))).to(device)
     # not distance, so argmax
 
-    tmp_label = torch.argmax(similarity, dim=1)
+    tmp_label = torch.argmax(dist, dim=1)
     for i in range(self_label.size(0)):
         self_label[i][tmp_label[i]] = 1
 
     centroid = self_label.transpose(0, 1).matmul(features) / (1e-8 + self_label.sum(axis=0)[:, None])
 
-    similarity = torch.tensor([]).to(device)
+    dist = torch.tensor([]).to(device)
     for i in range(features.size(0)):
-        similarity = torch.cat((similarity, F.cosine_similarity(features[i].unsqueeze(0), centroid).unsqueeze(0)),
-                               dim=0)
+        dist = torch.cat(dist, cos_distance(features, centroid))
 
-    self_label = torch.argmax(similarity, dim=1).unsqueeze(0)
+    self_label = torch.argmin(dist, dim=1).unsqueeze(0)
     self_label = self_label.view(-1, 1)
 
-    return self_label.long().to(device), 1. - similarity
+    return self_label.long().to(device), dist
 
 
 def target_train(train_datas, test_datas, device, target_domain, args):
