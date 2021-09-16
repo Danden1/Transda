@@ -14,7 +14,7 @@ from loss import SmoothingCrossEntropy
 
 train_transforms = transforms.Compose([
       transforms.Resize((256,256)),
-      transforms.RandomCrop(224),
+      transforms.RandomCrop((224,224)),
       transforms.RandomHorizontalFlip(),
       transforms.ToTensor(),
       #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -22,7 +22,7 @@ train_transforms = transforms.Compose([
 ])
 
 test_transforms = transforms.Compose([
-      transforms.Resize(224),
+      transforms.Resize((224,224)),
       transforms.ToTensor(),
       #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
       transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -49,7 +49,7 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
 
 
 def pretrain(train_data, test_data, device, args):
-    pretrain_model = Transda(num_classes=31)
+    pretrain_model = Transda(num_classes=args.classes)
     pretrain_model.to(device)
 
 
@@ -140,17 +140,26 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', type=str, default='../../../../shared/domain_adaptation/office')
     parser.add_argument('--chkp_path', type=str, default='./chkp/0.pt')
     parser.add_argument('--split', type=float, default=0.9)
+    parser.add_argument('--dataset', type=str, default='office')
+    parser.add_argument('--classes', type=int, default=31)
     args = parser.parse_args()
 
     torch.manual_seed(2020)
     torch.cuda.manual_seed(2020)
     np.random.seed(2020)
     random.seed(2020)
-
-    DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
-    class_list = os.listdir(DATA_PATH[args.s])
-
     device = 'cuda:' + args.gpu_id
+
+    if args.dataset == 'office':
+        DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
+        class_list = os.listdir(DATA_PATH[args.s])
+        domain_names = ['amazon', 'dslr', 'webcam']
+    elif args.dataset == 'office-home':
+        DATA_PATH = [args.data_path + '/Art/', args.data_path + '/Product/', args.data_path + '/RealWorld/', args.data_path + '/Clipart/']
+        class_list = os.listdir(DATA_PATH[args.s])
+        domain_names = ['Art', 'Product', 'RealWorld','Clipart']
+
+
     train_data, test_data = split_data(DATA_PATH[args.s], class_list, args.split)
 
     pretrain(train_data, test_data, device, args)

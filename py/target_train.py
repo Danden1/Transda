@@ -16,7 +16,7 @@ from loss import CrossEntropy
 
 train_transforms = transforms.Compose([
       transforms.Resize((256,256)),
-      transforms.RandomCrop(224),
+      transforms.RandomCrop((224,224)),
       transforms.RandomHorizontalFlip(),
       transforms.ToTensor(),
       #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -24,7 +24,7 @@ train_transforms = transforms.Compose([
 ])
 
 test_transforms = transforms.Compose([
-      transforms.Resize(224),
+      transforms.Resize((224,224)),
       transforms.ToTensor(),
       #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
       transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -79,30 +79,29 @@ def self_labeling(model, datas, batch_size, i, device):
                 features = torch.cat((features, feature.float()), dim=0)
                 targets = torch.cat((targets, target.float()), dim=0)
 
-    #num_classes x out_features
-    centroid = targets.transpose(0, 1).matmul(features) / (1e-8 + targets.sum(axis=0)[:, None])
-    dist = torch.tensor([]).to(device)
+        #num_classes x out_features
+        centroid = targets.transpose(0, 1).matmul(features) / (1e-8 + targets.sum(axis=0)[:, None])
+        dist = torch.tensor([]).to(device)
 
-    #bug! F.cosine_similarity
-    # https://stackoverflow.com/questions/50411191/how-to-compute-the-cosine-similarity-in-pytorch-for-all-rows-in-a-matrix-with-re 
-    for i in range(features.size(0)):
-        dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
+        #bug! F.cosine_similarity
+        # https://stackoverflow.com/questions/50411191/how-to-compute-the-cosine-similarity-in-pytorch-for-all-rows-in-a-matrix-with-re
+        for i in range(features.size(0)):
+            dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
 
-    self_label = torch.zeros((features.size(0), targets.size(1))).to(device)
-    # not distance, so argmax
+        self_label = torch.zeros((features.size(0), targets.size(1))).to(device)
 
-    tmp_label = torch.argmin(dist, dim=1)
-    for i in range(self_label.size(0)):
-        self_label[i][tmp_label[i]] = 1
+        tmp_label = torch.argmin(dist, dim=1)
+        for i in range(self_label.size(0)):
+            self_label[i][tmp_label[i]] = 1
 
-    centroid = self_label.transpose(0, 1).matmul(features) / (1e-8 + self_label.sum(axis=0)[:, None])
+        centroid = self_label.transpose(0, 1).matmul(features) / (1e-8 + self_label.sum(axis=0)[:, None])
 
-    dist = torch.tensor([]).to(device)
-    for i in range(features.size(0)):
-        dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
+        dist = torch.tensor([]).to(device)
+        for i in range(features.size(0)):
+            dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
 
-    self_label = torch.argmin(dist, dim=1).unsqueeze(0)
-    self_label = self_label.view(-1, 1)
+        self_label = torch.argmin(dist, dim=1).unsqueeze(0)
+        self_label = self_label.view(-1, 1)
 
     return self_label.long().to(device), dist
 
@@ -113,11 +112,11 @@ def target_train(train_datas, test_datas, device, target_domain, args):
         train_data = train_datas[j]
         test_data = test_datas[j]
 
-        student_model = Transda(num_classes=31)
+        student_model = Transda(num_classes=args.classes)
         student_model = student_model.to(device)
         student_model.load_state_dict(torch.load(args.chkp_path, map_location=device))
 
-        teacher_model = Transda(num_classes=31)
+        teacher_model = Transda(num_classes=args.classes)
         teacher_model = teacher_model.to(device)
         teacher_model.load_state_dict(torch.load(args.chkp_path, map_location=device))
 
@@ -184,14 +183,13 @@ def target_train(train_datas, test_datas, device, target_domain, args):
 
                 im_loss += p
 
-                self_label = self_labels[idx * data.size(0): idx * data.size(0) + data.size(0)]
                 self_label = torch.zeros((data.size(0), pred.size(1))).to(device)
                 for i in range(data.size(0)):
                     self_label[i][self_labels[idx * data.size(0) + i]] = 1
                 sl_loss = celoss(self_label, softmax_output)
 
                 distance = distances[idx * data.size(0):idx * data.size(0) + data.size(0)]
-                soft_label = torch.exp(distance / 0.1) / (torch.sum(torch.exp(distance / 0.1), dim=1)[:, None] + 1e-8)
+                soft_label = torch.exp(distance) / (torch.sum(torch.exp(distance), dim=1)[:, None] + 1e-8)
                 kd_loss = celoss(soft_label, softmax_output)
 
                 tgt_loss = im_loss + 0.3 * sl_loss + kd_loss
@@ -213,6 +211,8 @@ def target_train(train_datas, test_datas, device, target_domain, args):
             with torch.no_grad():
                 m = 0.001  # momentum parameter
                 for param_q, param_k in zip(student_model.feature.parameters(), teacher_model.feature.parameters()):
+                    param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
+                for param_q, param_k in zip(student_model.fn.parameters(), teacher_model.fn.parameters()):
                     param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
             for i in teacher_model.parameters():
                 i.required_grad = False
@@ -243,6 +243,8 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', type=str, default='../../../../shared/domain_adaptation/office')
     parser.add_argument('--chkp_path', type=str, default='./chkp/0.pt')
     parser.add_argument('--split', type=float, default=0.9)
+    parser.add_argument('--dataset', type=str, default='office')
+    parser.add_argument('--classes', type=int, default=31)
     args = parser.parse_args()
 
     torch.manual_seed(2020)
@@ -250,10 +252,18 @@ if __name__ == "__main__":
     np.random.seed(2020)
     random.seed(2020)
 
-    DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
-    class_list = os.listdir(DATA_PATH[args.s])
+    #DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
+    #class_list = os.listdir(DATA_PATH[args.s])
 
     device = 'cuda:' + args.gpu_id
+    if args.dataset == 'office':
+        DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
+        class_list = os.listdir(DATA_PATH[args.s])
+        domain_names = ['amazon', 'dslr', 'webcam']
+    elif args.dataset == 'office-home':
+        DATA_PATH = [args.data_path + '/Art/', args.data_path + '/Product/', args.data_path + '/RealWorld/', args.data_path + '/Clipart/']
+        class_list = os.listdir(DATA_PATH[args.s])
+        domain_names = ['Art', 'Product', 'RealWorld','Clipart']
 
     train_datas, test_datas= [],[]
     target_domain = domain_names[:]
@@ -265,8 +275,4 @@ if __name__ == "__main__":
             train_datas.append(train_data)
             test_datas.append(test_data)
 
-    print(train_datas[0][1])
-    print(test_datas[0][1])
-    print(train_datas[1][1])
-    print(test_datas[1][1])
     target_train(train_datas, test_datas, device, target_domain, args)
