@@ -134,11 +134,12 @@ if __name__ == "__main__":
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0')
     parser.add_argument('--s', type=int, default=0, help='source domain')
     parser.add_argument('--t', type=int, default=1, help='target domain')
-    parser.add_argument('--epoch', type=int, default=30, help='epoch')
+    parser.add_argument('--epoch', type=int, default=20, help='epoch')
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-    parser.add_argument('--data_path', type=str, default='../../../shared/domain_adaptation/office')
+    parser.add_argument('--data_path', type=str, default='../../../../shared/domain_adaptation/office')
     parser.add_argument('--chkp_path', type=str, default='./chkp/0.pt')
+    parser.add_argument('--split', type=float, default=0.9)
     args = parser.parse_args()
 
     torch.manual_seed(2020)
@@ -147,11 +148,10 @@ if __name__ == "__main__":
     random.seed(2020)
 
     DATA_PATH = [args.data_path+'/amazon/images/', args.data_path+'/dslr/images/', args.data_path+'/webcam/images/']
-    print(DATA_PATH)
     class_list = os.listdir(DATA_PATH[args.s])
-    print(DATA_PATH)
+
     device = 'cuda:' + args.gpu_id
-    train_data, test_data = split_data(DATA_PATH[args.s], class_list)
+    train_data, test_data = split_data(DATA_PATH[args.s], class_list, args.split)
 
     pretrain(train_data, test_data, device, args)
 

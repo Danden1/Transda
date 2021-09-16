@@ -51,11 +51,11 @@ def lr_scheduler(optimizer, iter_num, max_iter, gamma=10, power=0.75):
 def cos_distance(x,y, eps=1e-8):
     x_n, y_n = x.norm(dim=1)[:, None], y.norm(dim=1)[:, None]
     x_norm = x / torch.max(x_n, eps * torch.ones_like(x_n))
-    y_norm = y / torch.max(y_n, eps* torch.ones_like(y_n))
+    y_norm = y / torch.max(y_n, eps * torch.ones_like(y_n))
     
     dist = 1 - torch.mm(x_norm, y_norm.transpose(0,1))
 
-    return dist
+    return dist.float()
 
 def self_labeling(model, datas, batch_size, i, device):
     start_chk = True
@@ -86,12 +86,12 @@ def self_labeling(model, datas, batch_size, i, device):
     #bug! F.cosine_similarity
     # https://stackoverflow.com/questions/50411191/how-to-compute-the-cosine-similarity-in-pytorch-for-all-rows-in-a-matrix-with-re 
     for i in range(features.size(0)):
-        dist = torch.cat(dist, cos_distance(features, centroid))
+        dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
 
     self_label = torch.zeros((features.size(0), targets.size(1))).to(device)
     # not distance, so argmax
 
-    tmp_label = torch.argmax(dist, dim=1)
+    tmp_label = torch.argmin(dist, dim=1)
     for i in range(self_label.size(0)):
         self_label[i][tmp_label[i]] = 1
 
@@ -99,7 +99,7 @@ def self_labeling(model, datas, batch_size, i, device):
 
     dist = torch.tensor([]).to(device)
     for i in range(features.size(0)):
-        dist = torch.cat(dist, cos_distance(features, centroid))
+        dist = torch.cat((dist, cos_distance(features, centroid).to(device)), dim=0)
 
     self_label = torch.argmin(dist, dim=1).unsqueeze(0)
     self_label = self_label.view(-1, 1)
@@ -240,8 +240,9 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', type=int, default=15, help='epoch')
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-    parser.add_argument('--data_path', type=str, default='../../../shared/domain_adaptation/office')
+    parser.add_argument('--data_path', type=str, default='../../../../shared/domain_adaptation/office')
     parser.add_argument('--chkp_path', type=str, default='./chkp/0.pt')
+    parser.add_argument('--split', type=float, default=0.9)
     args = parser.parse_args()
 
     torch.manual_seed(2020)
@@ -260,8 +261,12 @@ if __name__ == "__main__":
 
     for i in range(len(domain_names)):
         if domain_names[i] in target_domain:
-            train_data, test_data = split_data(DATA_PATH[i], class_list)
+            train_data, test_data = split_data(DATA_PATH[i], class_list, args.split)
             train_datas.append(train_data)
             test_datas.append(test_data)
 
+    print(train_datas[0][1])
+    print(test_datas[0][1])
+    print(train_datas[1][1])
+    print(test_datas[1][1])
     target_train(train_datas, test_datas, device, target_domain, args)
