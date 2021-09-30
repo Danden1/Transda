@@ -39,7 +39,4 @@ DA 할 때, train accuracy 가 test accuracy보다 낮게 나옴.
 
 하지만, source domain 학습할 때는 그렇지 않음.
 
-
-
-
-업데이트 중...
+이 문제는 해결하지 못했음.
